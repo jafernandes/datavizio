@@ -98,9 +98,9 @@ az storage account create --name $storageAccountName --resource-group $resourceG
 
 # Criar Containers na Conta de Armazenamento com autenticação Microsoft Entra
 echo "Criando containers na conta de armazenamento..."
-az storage container create --name bronze --account-name $storageAccountName --auth-mode login || abort_on_failure "container bronze"
-az storage container create --name silver --account-name $storageAccountName --auth-mode login || abort_on_failure "container silver"
-az storage container create --name gold --account-name $storageAccountName --auth-mode login || abort_on_failure "container gold"
+az storage container create --name bronze --account-name $storageAccountName || abort_on_failure "container bronze"
+az storage container create --name silver --account-name $storageAccountName || abort_on_failure "container silver"
+az storage container create --name gold --account-name $storageAccountName || abort_on_failure "container gold"
 
 # Criar Azure Data Factory com configuração interativa
 echo "Criando o Azure Data Factory..."
