@@ -74,7 +74,7 @@ fi
 
 # Criar Grupo de Recursos
 echo "Criando o grupo de recursos..."
-az group create --name $resourceGroupName --location $location || abort_on_failure "grupo de recursos"
+az group create --name $resourceGroupName --location $location --tags Client=$clientName || abort_on_failure "grupo de recursos"
 
 # Criar Conta de Armazenamento com configuração interativa
 echo "Criando a conta de armazenamento..."
@@ -94,43 +94,27 @@ if [[ $storageConfig == "s" ]]; then
 else
   storageSku="Standard_LRS"
 fi
-az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku $storageSku || abort_on_failure "conta de armazenamento"
+az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku $storageSku --kind StorageV2 --enable-hierarchical-namespace true --tags Client=$clientName || abort_on_failure "conta de armazenamento"
 
-# Criar Containers na Conta de Armazenamento
+# Criar Containers na Conta de Armazenamento com autenticação Microsoft Entra
 echo "Criando containers na conta de armazenamento..."
-az storage container create --name bronze --account-name $storageAccountName || abort_on_failure "container bronze"
-az storage container create --name silver --account-name $storageAccountName || abort_on_failure "container silver"
-az storage container create --name gold --account-name $storageAccountName || abort_on_failure "container gold"
+az storage container create --name bronze --account-name $storageAccountName --auth-mode login || abort_on_failure "container bronze"
+az storage container create --name silver --account-name $storageAccountName --auth-mode login || abort_on_failure "container silver"
+az storage container create --name gold --account-name $storageAccountName --auth-mode login || abort_on_failure "container gold"
 
 # Criar Azure Data Factory com configuração interativa
 echo "Criando o Azure Data Factory..."
-az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location || abort_on_failure "Azure Data Factory"
+az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location --tags Client=$clientName || abort_on_failure "Azure Data Factory"
 
 # Criar Synapse Workspace com configuração interativa
 echo "Criando o Synapse Workspace..."
-read -p "Deseja configurar opções específicas para o Synapse Workspace? (s/n): " synapseConfig
-if [[ $synapseConfig == "s" ]]; then
-  echo "Escolha a SKU do Synapse Workspace:"
-  echo "1) DW100c (mais barato)"
-  echo "2) DW200c"
-  echo "3) DW300c"
-  read -p "Selecione a opção (1/2/3): " synapseSkuChoice
-  case $synapseSkuChoice in
-    1) synapseSku="DW100c";;
-    2) synapseSku="DW200c";;
-    3) synapseSku="DW300c";;
-    *) echo "Opção inválida, usando DW100c."; synapseSku="DW100c";;
-  esac
-else
-  synapseSku="DW100c"
-fi
-az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword --sku-name $synapseSku || abort_on_failure "Synapse Workspace"
+az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword --tags Client=$clientName || abort_on_failure "Synapse Workspace"
 
 # Criar e configurar Key Vaults
 for kvName in "${keyVaultNames[@]}"
 do
   echo "Criando o Azure Key Vault $kvName..."
-  az keyvault create --name $kvName --resource-group $resourceGroupName --location $location || abort_on_failure "Key Vault $kvName"
+  az keyvault create --name $kvName --resource-group $resourceGroupName --location $location --tags Client=$clientName || abort_on_failure "Key Vault $kvName"
   echo "Configurando Key Vault $kvName..."
   secrets="keyVaultSecrets_$kvName[@]"
   for secretName in "${!secrets}"
