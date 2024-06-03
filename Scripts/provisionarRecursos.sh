@@ -1,27 +1,28 @@
 #!/bin/bash
 
-# Função para abortar em caso de falha
+# Função para abortar em caso de falha e limpar recursos
 abort_on_failure() {
-  echo "Erro ao criar $1. Abortando operação e desfazendo todos os recursos."
-  clean_up
+  echo "Erro ao criar $1. Abortando operação."
+  echo "Limpando recursos criados..."
+  az group delete --name $resourceGroupName --yes --no-wait
+  echo "Aguarde até que todos os recursos sejam excluídos..."
+  az group wait --deleted --name $resourceGroupName
   exit 1
 }
 
-# Função para limpar todos os recursos criados em caso de falha
-clean_up() {
-  echo "Limpando todos os recursos criados..."
-  az group delete --name $resourceGroupName --yes --no-wait
-  echo "Recursos limpos."
-}
-
-# Definir um trap para limpar recursos em caso de qualquer erro
-trap 'abort_on_failure "alguma operação"' ERR
+# Listar assinaturas disponíveis
+echo "Listando assinaturas disponíveis..."
+az account list --output table
 
 # Solicitar informações ao usuário
 echo "Bem-vindo ao processo de configuração interativo do Azure!"
+read -p "Digite o ID da assinatura do Azure que deseja utilizar: " subscriptionId
 read -p "Digite o nome do cliente: " clientName
 read -p "Digite o local (ex: eastus): " location
 read -p "Quantos Key Vaults deseja criar? " kvCount
+
+# Configurar a assinatura do Azure
+az account set --subscription $subscriptionId || abort_on_failure "definição da assinatura do Azure"
 
 # Nomear os recursos de acordo com as convenções
 resourceGroupName="rg-${clientName}"
@@ -161,44 +162,14 @@ az synapse workspace data-connection create --workspace-name $synapseWorkspaceNa
 
 # Configurar alertas de custo
 echo "Configurando alertas de custo..."
-az monitor budget create --resource-group $resourceGroupName --name "${clientName}-monthly-budget" --category cost --amount $monthlyBudget --time-grain monthly --start-date $(date +%Y-%m-01) --end-date $(date -d "$(date +%Y-%m-01) + 1 year" +%Y-%m-%d) --notifications '[{"enabled":true,"operator":"GreaterThan","threshold":90,"contactEmails":["'$notificationEmail'"]}]' || abort_on_failure "orçamento mensal"
-az monitor budget create --resource-group $resourceGroupName --name "${clientName}-daily-budget" --category cost --amount $dailyBudget --time-grain daily --start-date $(date +%Y-%m-01) --end-date $(date -d "$(date +%Y-%m-01) + 1 year" +%Y-%m-%d) --notifications '[{"enabled":true,"operator":"GreaterThan","threshold":90,"contactEmails":["'$notificationEmail'"]}]' || abort_on_failure "orçamento diário"
+az monitor budget create --resource-group $resourceGroupName --name "${clientName}-monthly-budget" --category cost --amount $monthlyBudget --time-grain monthly --start-date $(date +%Y-%m-01) --end-date $(date -d "$(date +%Y-%m-01) + 1 year" +%Y-%m-%d) --notifications '[{"enabled":true,"operator":"GreaterThan","threshold":90,"contactEmails":["'$notificationEmail'"]}]' || abort_on_failure "alerta de orçamento mensal"
+az monitor budget create --resource-group $resourceGroupName --name "${clientName}-daily-budget" --category cost --amount $dailyBudget --time-grain daily --start-date $(date +%Y-%m-01) --end-date $(date -d "$(date +%Y-%m-01) + 1 year" +%Y-%m-%d) --notifications '[{"enabled":true,"operator":"GreaterThan","threshold":90,"contactEmails":["'$notificationEmail'"]}]' || abort_on_failure "alerta de orçamento diário"
 
-# Configurar logs e alertas de uso
-echo "Configurando logs e alertas de uso..."
-az monitor diagnostic-settings create --name "${clientName}-diagnostic-settings" --resource-group $resourceGroupName --resource $(az synapse workspace show --name $synapseWorkspaceName --resource-group $resourceGroupName --query "id" --output tsv) --workspace $logAnalyticsWorkspaceId --logs '[{"category": "SynapseWorkspaceAuditLogs", "enabled": true}]' --metrics '[{"category": "AllMetrics", "enabled": true}]' || abort_on_failure "configuração de logs e alertas"
+# Configurar resumo de utilização
+echo "Configurando resumo de utilização..."
+echo "Criando regra de alerta para resumo de utilização..."
+for hour in 12 18; do
+  az monitor metrics alert create --name "${clientName}-usage-summary-${hour}" --resource-group $resourceGroupName --scopes $(az resource list --resource-group $resourceGroupName --query "[].id" --output tsv) --condition "total cost > 0" --description "Resumo de utilização e custo" --action email $notificationEmail --evaluation-frequency "1H" --window-size "1H" --enabled true --severity 3 || abort_on_failure "alerta de resumo de utilização"
+done
 
-# Configurar alertas de uso
-echo "Configurando alertas de uso..."
-az monitor metrics alert create --name "${clientName}-usage-alert" --resource-group $resourceGroupName --scopes $(az synapse workspace show --name $synapseWorkspaceName --resource-group $resourceGroupName --query "id" --output tsv) --condition "avg percentage CPU > 80" --description "Alerta de alta utilização de CPU no Synapse Workspace" --action email $notificationEmail || abort_on_failure "alerta de uso"
-
-# Agendar resumos de utilização
-echo "Agendando resumos de utilização..."
-az logic workflow create --resource-group $resourceGroupName --name "${clientName}-usage-summary" --location $location --definition '{
-  "definition": {
-    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
-    "actions": {
-      "Send_an_email_(V2)": {
-        "inputs": {
-          "body": "Resumo de utilização de recursos: ...",
-          "subject": "Resumo de Utilização",
-          "to": "'$notificationEmail'"
-        },
-        "runAfter": {},
-        "type": "ApiConnection"
-      }
-    },
-    "triggers": {
-      "Recurrence": {
-        "recurrence": {
-          "interval": 12,
-          "frequency": "Hour"
-        },
-        "type": "Recurrence"
-      }
-    }
-  },
-  "location": "'$location'"
-}' || abort_on_failure "agendamento de resumos de utilização"
-
-echo "Configuração concluída com sucesso!"
+echo "Todos os recursos foram criados e configurados com sucesso!"
