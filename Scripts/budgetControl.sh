@@ -29,18 +29,21 @@ az consumption budget create --budget-name "daily-budget" --resource-group $reso
 
 echo "Configuração de Budget concluída."
 
-# Configurar notificações por e-mail para o orçamento mensal
-echo "Configurando notificações por e-mail para o Budget Mensal..."
-az monitor action-group create --name "${clientName}-monthly-budget-action" --resource-group $resourceGroupName --action email --emails "Joel.fernandes@datavizio.com.br" || abort_on_failure "Configuração de Ação para Budget Mensal"
+# Configurar ação de grupo de ação para notificações por e-mail
+echo "Configurando notificações por e-mail..."
+
+az monitor action-group create --name "${clientName}-budget-action-group" --resource-group $resourceGroupName --short-name "${clientName}-budget-action" --email Joelfernandes@datavizio.com.br --enabled true || abort_on_failure "Ação de Grupo de Ação para Notificações por E-mail"
+
+echo "Ação de Grupo de Ação para Notificações por E-mail configurada."
 
 # Vincular a ação ao alerta de gastos mensais
-az monitor alert create --name "${clientName}-monthly-budget-alert" --resource-group $resourceGroupName --condition "spending > 90" --target "subscription/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Consumption/budgets/monthly-budget" --action "${clientName}-monthly-budget-action" --description "Notificação de orçamento mensal para o cliente ${clientName}" --frequency "Hour" --time-grain "1" --timezone "UTC" --start-date "$(date -u '+%Y-%m-%dT11:00:00')" --end-date "$(date -u '+%Y-%m-%dT18:00:00')" || abort_on_failure "Notificação de E-mail para Budget Mensal"
+echo "Configurando alerta para orçamento mensal..."
 
-# Configurar notificações por e-mail para o orçamento diário
-echo "Configurando notificações por e-mail para o Budget Diário..."
-az monitor action-group create --name "${clientName}-daily-budget-action" --resource-group $resourceGroupName --action email --emails "Joel.fernandes@datavizio.com.br" || abort_on_failure "Configuração de Ação para Budget Diário"
+az monitor alert create --name "${clientName}-monthly-budget-alert" --resource-group $resourceGroupName --condition "spending > 90" --description "Notificação de orçamento mensal para o cliente ${clientName}" --target "subscription/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Consumption/budgets/monthly-budget" --action "${clientName}-budget-action" --frequency "Hour" --time-grain "1" --timezone "UTC" --start-date "$(date -u '+%Y-%m-%dT11:00:00')" --end-date "$(date -u '+%Y-%m-%dT18:00:00')" || abort_on_failure "Alerta para Orçamento Mensal"
 
 # Vincular a ação ao alerta de gastos diários
-az monitor alert create --name "${clientName}-daily-budget-alert" --resource-group $resourceGroupName --condition "spending > 90" --target "subscription/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Consumption/budgets/daily-budget" --action "${clientName}-daily-budget-action" --description "Notificação de orçamento diário para o cliente ${clientName}" --frequency "Hour" --time-grain "1" --timezone "UTC" --start-date "$(date -u '+%Y-%m-%dT11:00:00')" --end-date "$(date -u '+%Y-%m-%dT18:00:00')" || abort_on_failure "Notificação de E-mail para Budget Diário"
+echo "Configurando alerta para orçamento diário..."
+
+az monitor alert create --name "${clientName}-daily-budget-alert" --resource-group $resourceGroupName --condition "spending > 90" --description "Notificação de orçamento diário para o cliente ${clientName}" --target "subscription/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Consumption/budgets/daily-budget" --action "${clientName}-budget-action" --frequency "Hour" --time-grain "1" --timezone "UTC" --start-date "$(date -u '+%Y-%m-%dT11:00:00')" --end-date "$(date -u '+%Y-%m-%dT18:00:00')" || abort_on_failure "Alerta para Orçamento Diário"
 
 echo "Configuração de notificações por e-mail concluída."
