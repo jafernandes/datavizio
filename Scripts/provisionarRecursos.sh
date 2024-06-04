@@ -15,22 +15,20 @@ clean_up_resources() {
   echo "Recursos removidos. Saindo..."
 }
 
-# Seleção da assinatura
-echo "Listando assinaturas disponíveis..."
-az account list --output table
-read -p "Digite o ID da assinatura que deseja utilizar: " subscriptionId
+# Definir a assinatura e a localização padrão
+subscriptionId="0448ce1f-bab4-4d30-bed8-ce1615fd1b5e"
+location="eastus"
 az account set --subscription $subscriptionId
 
 # Solicitar informações ao usuário
 echo "Bem-vindo ao processo de configuração interativo do Azure!"
 read -p "Digite o nome do cliente: " clientName
-read -p "Digite o local (ex: eastus): " location
 read -p "Quantos Key Vaults deseja criar? " kvCount
 
 # Nomear os recursos de acordo com as convenções
 resourceGroupName="rg-${clientName}"
 managedResourceGroupName="synapseworkspace-managedrg-${clientName}"
-storageAccountName="st-${clientName}$(date +%s)"
+storageAccountName="st${clientName}$(date +%s)"
 dataFactoryName="adf-${clientName}"
 synapseWorkspaceName="synapse-${clientName}"
 keyVaultNames=()
@@ -117,7 +115,7 @@ done
 echo "Adicionando tags aos recursos..."
 resources=$(az resource list --resource-group $resourceGroupName --query "[].id" --output tsv)
 for resource in $resources; do
-  az resource tag --tags ClientName=$clientName --ids $resource --resource-type Microsoft.Resources/subscriptions/resourceGroups || abort_on_failure "tag nos recursos"
+  az resource tag --tags ClientName=$clientName --ids $resource || abort_on_failure "tag nos recursos"
 done
 
 echo "Criação de recursos concluída."
