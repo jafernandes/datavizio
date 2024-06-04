@@ -30,7 +30,7 @@ read -p "Quantos Key Vaults deseja criar? " kvCount
 # Nomear os recursos de acordo com as convenções
 resourceGroupName="rg-${clientName}"
 managedResourceGroupName="synapseworkspace-managedrg-${clientName}"
-storageAccountName="st${clientName}$(date +%s)"
+storageAccountName="st-${clientName}$(date +%s)"
 dataFactoryName="adf-${clientName}"
 synapseWorkspaceName="synapse-${clientName}"
 keyVaultNames=()
