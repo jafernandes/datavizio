@@ -27,7 +27,7 @@ az consumption budget create --budget-name "monthly-budget" --resource-group $re
     "threshold": 90,
     "contactEmails": ["Joel.fernandes@datavizio.com.br"]
   }
-}' || abort_on_failure "Budget Mensal"
+}' --category Cost || abort_on_failure "Budget Mensal"
 
 az consumption budget create --budget-name "daily-budget" --resource-group $resourceGroupName --amount 10 --time-grain Daily --start-date $(date +%Y-%m-01) --end-date $(date -d "+1 year" +%Y-%m-01) --category Cost --notifications '{
   "email": {
@@ -36,6 +36,6 @@ az consumption budget create --budget-name "daily-budget" --resource-group $reso
     "threshold": 90,
     "contactEmails": ["Joel.fernandes@datavizio.com.br"]
   }
-}' || abort_on_failure "Budget Diário"
+}' --category Cost || abort_on_failure "Budget Diário"
 
 echo "Configuração de notificações e budget concluída."
