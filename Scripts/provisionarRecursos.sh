@@ -2,14 +2,20 @@
 
 # Função para abortar em caso de falha
 abort_on_failure() {
-  echo "Erro: $1. Abortando operação."
+  echo "Erro ao criar $1. Abortando operação."
   exit 1
 }
 
+# Seleção da assinatura
+echo "Listando assinaturas disponíveis..."
+az account list --output table
+read -p "Digite o ID da assinatura que deseja utilizar: " subscriptionId
+az account set --subscription $subscriptionId
+
 # Solicitar informações ao usuário
+echo "Bem-vindo ao processo de configuração interativo do Azure!"
 read -p "Digite o nome do cliente: " clientName
 read -p "Digite o local (ex: eastus): " location
-read -p "Digite a assinatura a ser usada: " subscriptionId
 read -p "Quantos Key Vaults deseja criar? " kvCount
 
 # Nomear os recursos de acordo com as convenções
@@ -54,20 +60,15 @@ if [[ $confirm != "s" ]]; then
   exit 1
 fi
 
-# Configurar a assinatura
-az account set --subscription $subscriptionId || abort_on_failure "configurar a assinatura"
-
 # Criar Grupo de Recursos
 echo "Criando o grupo de recursos..."
-az group create --name $resourceGroupName --location $location --tags Client=$clientName || abort_on_failure "grupo de recursos"
+az group create --name $resourceGroupName --location $location || abort_on_failure "grupo de recursos"
 
-# Criar Conta de Armazenamento
+# Criar Conta de Armazenamento com Azure Data Lake Storage Gen 2
 echo "Criando a conta de armazenamento..."
-storageSku="Standard_LRS"
+az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku Standard_LRS --kind StorageV2 --hierarchical-namespace true || abort_on_failure "conta de armazenamento"
 
-az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku $storageSku --kind StorageV2 --hns true || abort_on_failure "conta de armazenamento"
-
-# Criar Containers na Conta de Armazenamento
+# Criar Containers na Conta de Armazenamento com autenticação Microsoft Entra
 echo "Criando containers na conta de armazenamento..."
 az storage container create --name bronze --account-name $storageAccountName --auth-mode login || abort_on_failure "container bronze"
 az storage container create --name silver --account-name $storageAccountName --auth-mode login || abort_on_failure "container silver"
@@ -75,17 +76,17 @@ az storage container create --name gold --account-name $storageAccountName --aut
 
 # Criar Azure Data Factory
 echo "Criando o Azure Data Factory..."
-az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location --tags Client=$clientName || abort_on_failure "Azure Data Factory"
+az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location || abort_on_failure "Azure Data Factory"
 
-# Criar Synapse Workspace sem configuração de SKU
+# Criar Synapse Workspace
 echo "Criando o Synapse Workspace..."
-az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword --tags Client=$clientName || abort_on_failure "Synapse Workspace"
+az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword || abort_on_failure "Synapse Workspace"
 
 # Criar e configurar Key Vaults
 for kvName in "${keyVaultNames[@]}"
 do
   echo "Criando o Azure Key Vault $kvName..."
-  az keyvault create --name $kvName --resource-group $resourceGroupName --location $location --tags Client=$clientName || abort_on_failure "Key Vault $kvName"
+  az keyvault create --name $kvName --resource-group $resourceGroupName --location $location || abort_on_failure "Key Vault $kvName"
   echo "Configurando Key Vault $kvName..."
   secrets="keyVaultSecrets_$kvName[@]"
   for secretName in "${!secrets}"
@@ -94,3 +95,9 @@ do
     az keyvault secret set --vault-name $kvName --name $secretName --value $secretValue || abort_on_failure "segredo $secretName no Key Vault $kvName"
   done
 done
+
+# Tags
+echo "Adicionando tags aos recursos..."
+az resource tag --tags ClientName=$clientName --resource-group $resourceGroupName || abort_on_failure "tag nos recursos"
+
+echo "Criação de recursos concluída."
