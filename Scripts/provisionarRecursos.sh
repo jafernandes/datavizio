@@ -15,14 +15,6 @@ clean_up_resources() {
   echo "Recursos removidos. Saindo..."
 }
 
-# Função para medir tempo de execução
-measure_time() {
-  start_time=$SECONDS
-  "$@"
-  elapsed=$(( SECONDS - start_time ))
-  echo "$1 demorou $elapsed segundos."
-}
-
 # Seleção da assinatura
 echo "Listando assinaturas disponíveis..."
 az account list --output table
@@ -80,25 +72,25 @@ fi
 
 # Criar Grupo de Recursos
 echo "Criando o grupo de recursos..."
-measure_time az group create --name $resourceGroupName --location $location || abort_on_failure "grupo de recursos"
+az group create --name $resourceGroupName --location $location || abort_on_failure "grupo de recursos"
 
 # Criar Conta de Armazenamento com Azure Data Lake Storage Gen 2
 echo "Criando a conta de armazenamento..."
-measure_time az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku Standard_LRS --kind StorageV2 --hns true || abort_on_failure "conta de armazenamento"
+az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku Standard_LRS --kind StorageV2 --hns true || abort_on_failure "conta de armazenamento"
 
 # Criar Containers na Conta de Armazenamento com autenticação Microsoft Entra
 echo "Criando containers na conta de armazenamento..."
-measure_time az storage container create --name bronze --account-name $storageAccountName --auth-mode login || abort_on_failure "container bronze"
-measure_time az storage container create --name silver --account-name $storageAccountName --auth-mode login || abort_on_failure "container silver"
-measure_time az storage container create --name gold --account-name $storageAccountName --auth-mode login || abort_on_failure "container gold"
+az storage container create --name bronze --account-name $storageAccountName --auth-mode login || abort_on_failure "container bronze"
+az storage container create --name silver --account-name $storageAccountName --auth-mode login || abort_on_failure "container silver"
+az storage container create --name gold --account-name $storageAccountName --auth-mode login || abort_on_failure "container gold"
 
 # Criar Azure Data Factory
 echo "Criando o Azure Data Factory..."
-measure_time az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location || abort_on_failure "Azure Data Factory"
+az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location || abort_on_failure "Azure Data Factory"
 
 # Criar Synapse Workspace com pool SQL built-in
 echo "Criando o Synapse Workspace..."
-measure_time az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword --repository-type None || abort_on_failure "Synapse Workspace"
+az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword --repository-type None || abort_on_failure "Synapse Workspace"
 
 # Obter o nome do grupo de recursos gerenciado e renomeá-lo
 managedResourceGroup=$(az group list --query "[?contains(name, 'synapseworkspace-managedrg')].{name:name}" --output tsv)
@@ -111,13 +103,13 @@ fi
 for kvName in "${keyVaultNames[@]}"
 do
   echo "Criando o Azure Key Vault $kvName..."
-  measure_time az keyvault create --name $kvName --resource-group $resourceGroupName --location $location || abort_on_failure "Key Vault $kvName"
+  az keyvault create --name $kvName --resource-group $resourceGroupName --location $location || abort_on_failure "Key Vault $kvName"
   echo "Configurando Key Vault $kvName..."
   secrets="keyVaultSecrets_$kvName[@]"
   for secretName in "${!secrets}"
   do
     secretValue=${secrets[$secretName]}
-    measure_time az keyvault secret set --vault-name $kvName --name $secretName --value $secretValue || abort_on_failure "segredo $secretName no Key Vault $kvName"
+    az keyvault secret set --vault-name $kvName --name $secretName --value $secretValue || abort_on_failure "segredo $secretName no Key Vault $kvName"
   done
 done
 
@@ -125,18 +117,7 @@ done
 echo "Adicionando tags aos recursos..."
 resources=$(az resource list --resource-group $resourceGroupName --query "[].id" --output tsv)
 for resource in $resources; do
-  az resource tag --tags ClientName=$clientName --ids $resource || abort_on_failure "tag nos recursos"
-done
-
-# Resumo do tempo de execução
-echo "Resumo do tempo de provisionamento:"
-echo "Grupo de Recursos: $(( SECONDS - start_time )) segundos."
-echo "Conta de Armazenamento: $(( SECONDS - start_time )) segundos."
-echo "Containers de Armazenamento: $(( SECONDS - start_time )) segundos."
-echo "Data Factory: $(( SECONDS - start_time )) segundos."
-echo "Synapse Workspace: $(( SECONDS - start_time )) segundos."
-for kvName in "${keyVaultNames[@]}"; do
-  echo "Key Vault $kvName: $(( SECONDS - start_time )) segundos."
+  az resource tag --tags ClientName=$clientName --ids $resource --resource-type Microsoft.Resources/subscriptions/resourceGroups || abort_on_failure "tag nos recursos"
 done
 
 echo "Criação de recursos concluída."
