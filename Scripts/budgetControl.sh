@@ -20,7 +20,7 @@ resourceGroupName="rg-${clientName}"
 
 # Configurar Budget
 echo "Configurando o Budget..."
-az consumption budget create --budget-name "monthly-budget" --resource-group $resourceGroupName --amount 20 --time-grain Monthly --start-date $(date +%Y-%m-01) --end-date $(date -d "+1 year" +%Y-%m-01) --notifications '{
+az consumption budget create --budget-name "monthly-budget" --resource-group $resourceGroupName --amount 20 --time-grain Monthly --start-date $(date +%Y-%m-01) --end-date $(date -d "+1 year" +%Y-%m-01) --category Cost --notifications '{
   "email": {
     "enabled": true,
     "operator": "GreaterThan",
@@ -29,7 +29,7 @@ az consumption budget create --budget-name "monthly-budget" --resource-group $re
   }
 }' || abort_on_failure "Budget Mensal"
 
-az consumption budget create --budget-name "daily-budget" --resource-group $resourceGroupName --amount 10 --time-grain Daily --start-date $(date +%Y-%m-01) --end-date $(date -d "+1 year" +%Y-%m-01) --notifications '{
+az consumption budget create --budget-name "daily-budget" --resource-group $resourceGroupName --amount 10 --time-grain Daily --start-date $(date +%Y-%m-01) --end-date $(date -d "+1 year" +%Y-%m-01) --category Cost --notifications '{
   "email": {
     "enabled": true,
     "operator": "GreaterThan",
