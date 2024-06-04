@@ -10,8 +10,8 @@ abort_on_failure() {
 # Função para limpar recursos
 clean_up_resources() {
   echo "Limpando recursos criados..."
-  az group delete --name $resourceGroupName --yes --no-wait
-  az group delete --name $managedResourceGroupName --yes --no-wait
+  az group delete --name $resourceGroupName --yes --no-wait --verbose
+  az group delete --name $managedResourceGroupName --yes --no-wait --verbose
   echo "Recursos removidos. Saindo..."
 }
 
@@ -88,14 +88,7 @@ az datafactory create --resource-group $resourceGroupName --name $dataFactoryNam
 
 # Criar Synapse Workspace com pool SQL built-in
 echo "Criando o Synapse Workspace..."
-az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword --repository-type None || abort_on_failure "Synapse Workspace"
-
-# Obter o nome do grupo de recursos gerenciado e renomeá-lo
-managedResourceGroup=$(az group list --query "[?contains(name, 'synapseworkspace-managedrg')].{name:name}" --output tsv)
-if [[ -n $managedResourceGroup ]]; then
-  echo "Renomeando grupo de recursos gerenciado..."
-  az group update --name $managedResourceGroup --set name=$managedResourceGroupName || abort_on_failure "renomeação do grupo de recursos gerenciado"
-fi
+az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword || abort_on_failure "Synapse Workspace"
 
 # Criar e configurar Key Vaults
 for kvName in "${keyVaultNames[@]}"
