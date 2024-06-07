@@ -1,17 +1,28 @@
 #!/bin/bash
 
+# Função para verificar se um recurso já existe
+resource_exists() {
+  local resourceType=$1
+  local resourceName=$2
+  az $resourceType show --name $resourceName --resource-group $resourceGroupName &>/dev/null
+}
+
 # Função para abortar em caso de falha e limpar recursos
 abort_on_failure() {
-  echo "Erro ao criar $1. Limpando recursos..."
-  clean_up_resources
+  echo "Erro ao criar $1."
+  read -p "Deseja limpar todos os recursos criados? (s/n): " confirm
+  if [[ $confirm == "s" ]]; then
+    clean_up_resources
+  else
+    echo "Recursos mantidos."
+  fi
   exit 1
 }
 
 # Função para limpar recursos
 clean_up_resources() {
   echo "Limpando recursos criados..."
-  az group delete --name $resourceGroupName --yes --no-wait --verbose
-  az group delete --name $managedResourceGroupName --yes --no-wait --verbose
+  az group delete --name $resourceGroupName --yes --verbose
   echo "Recursos removidos. Saindo..."
 }
 
@@ -23,34 +34,16 @@ az account set --subscription $subscriptionId
 # Solicitar informações ao usuário
 echo "Bem-vindo ao processo de configuração interativo do Azure!"
 read -p "Digite o nome do cliente: " clientName
-read -p "Quantos Key Vaults deseja criar? " kvCount
 
 # Nomear os recursos de acordo com as convenções
 resourceGroupName="rg-${clientName}"
-managedResourceGroupName="synapseworkspace-managedrg-${clientName}"
 storageAccountName="st${clientName}$(date +%s)"
 dataFactoryName="adf-${clientName}"
 synapseWorkspaceName="synapse-${clientName}"
-keyVaultNames=()
 sqlAdminLogin="sqladmin-${clientName}"
+databricksWorkspaceName="databricks-${clientName}"
 read -s -p "Digite a senha do administrador SQL: " sqlAdminPassword
 echo
-
-# Solicitar informações para os Key Vaults
-for (( i=1; i<=$kvCount; i++ ))
-do
-  read -p "Digite o nome do Key Vault #$i: " kvName
-  keyVaultNames+=($kvName)
-  declare "keyVaultSecrets_$kvName=()"
-  read -p "Quantos segredos deseja adicionar no Key Vault $kvName? " secretCount
-  for (( j=1; j<=$secretCount; j++ ))
-  do
-    read -p "Digite o nome do segredo #$j para $kvName: " secretName
-    read -s -p "Digite o valor do segredo $secretName: " secretValue
-    echo
-    declare "keyVaultSecrets_$kvName+=([$secretName]=$secretValue)"
-  done
-done
 
 # Mostrar ao usuário como os recursos serão nomeados
 echo "Os recursos serão nomeados da seguinte forma:"
@@ -58,7 +51,7 @@ echo "Grupo de Recursos: $resourceGroupName"
 echo "Conta de Armazenamento: $storageAccountName"
 echo "Data Factory: $dataFactoryName"
 echo "Synapse Workspace: $synapseWorkspaceName"
-echo "Key Vaults: ${keyVaultNames[@]}"
+echo "Databricks Workspace: $databricksWorkspaceName"
 echo "Usuário SQL: $sqlAdminLogin"
 
 # Confirmar com o usuário
@@ -68,47 +61,97 @@ if [[ $confirm != "s" ]]; then
   exit 1
 fi
 
-# Criar Grupo de Recursos
-echo "Criando o grupo de recursos..."
-az group create --name $resourceGroupName --location $location || abort_on_failure "grupo de recursos"
+# Verificar e criar Grupo de Recursos
+echo "Verificando grupo de recursos..."
+if resource_exists "group" $resourceGroupName; then
+  echo "Grupo de recursos já existe."
+else
+  echo "Criando o grupo de recursos..."
+  az group create --name $resourceGroupName --location $location || abort_on_failure "grupo de recursos"
+fi
 
-# Criar Conta de Armazenamento com Azure Data Lake Storage Gen 2
-echo "Criando a conta de armazenamento..."
-az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku Standard_LRS --kind StorageV2 --hns true || abort_on_failure "conta de armazenamento"
+# Verificar e criar Conta de Armazenamento com Azure Data Lake Storage Gen 2
+echo "Verificando conta de armazenamento..."
+if resource_exists "storage account" $storageAccountName; then
+  echo "Conta de armazenamento já existe."
+else
+  echo "Criando a conta de armazenamento..."
+  az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku Standard_LRS --kind StorageV2 --hns true || abort_on_failure "conta de armazenamento"
+fi
 
-# Criar Containers na Conta de Armazenamento com autenticação Microsoft Entra
-echo "Criando containers na conta de armazenamento..."
-az storage container create --name bronze --account-name $storageAccountName --auth-mode login || abort_on_failure "container bronze"
-az storage container create --name silver --account-name $storageAccountName --auth-mode login || abort_on_failure "container silver"
-az storage container create --name gold --account-name $storageAccountName --auth-mode login || abort_on_failure "container gold"
+# Verificar e criar Containers na Conta de Armazenamento com autenticação Microsoft Entra
+create_container_if_not_exists() {
+  local containerName=$1
+  echo "Verificando container $containerName..."
+  if az storage container show --name $containerName --account-name $storageAccountName &>/dev/null; then
+    echo "Container $containerName já existe."
+  else
+    echo "Criando container $containerName..."
+    az storage container create --name $containerName --account-name $storageAccountName --auth-mode login || abort_on_failure "container $containerName"
+  fi
+}
 
-# Criar Azure Data Factory
-echo "Criando o Azure Data Factory..."
-az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location || abort_on_failure "Azure Data Factory"
+create_container_if_not_exists "bronze"
+create_container_if_not_exists "silver"
+create_container_if_not_exists "gold"
+create_container_if_not_exists "scripts"
 
-# Criar Synapse Workspace com pool SQL built-in
-echo "Criando o Synapse Workspace..."
-az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword || abort_on_failure "Synapse Workspace"
+# Verificar e criar Azure Data Factory
+echo "Verificando Azure Data Factory..."
+if resource_exists "datafactory" $dataFactoryName; then
+  echo "Azure Data Factory já existe."
+else
+  echo "Criando o Azure Data Factory..."
+  az datafactory create --resource-group $resourceGroupName --name $dataFactoryName --location $location || abort_on_failure "Azure Data Factory"
+fi
 
-# Criar e configurar Key Vaults
-for kvName in "${keyVaultNames[@]}"
-do
-  echo "Criando o Azure Key Vault $kvName..."
-  az keyvault create --name $kvName --resource-group $resourceGroupName --location $location || abort_on_failure "Key Vault $kvName"
-  echo "Configurando Key Vault $kvName..."
-  secrets="keyVaultSecrets_$kvName[@]"
-  for secretName in "${!secrets}"
-  do
-    secretValue=${secrets[$secretName]}
-    az keyvault secret set --vault-name $kvName --name $secretName --value $secretValue || abort_on_failure "segredo $secretName no Key Vault $kvName"
-  done
-done
+# Verificar e criar Synapse Workspace com pool SQL built-in
+echo "Verificando Synapse Workspace..."
+if resource_exists "synapse workspace" $synapseWorkspaceName; then
+  echo "Synapse Workspace já existe."
+else
+  echo "Criando o Synapse Workspace..."
+  az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword || abort_on_failure "Synapse Workspace"
+fi
 
-# Tags
+# Verificar e criar Azure Databricks Workspace
+echo "Verificando Azure Databricks Workspace..."
+if resource_exists "databricks workspace" $databricksWorkspaceName; then
+  echo "Azure Databricks Workspace já existe."
+else
+  echo "Criando o Azure Databricks Workspace..."
+  az databricks workspace create --resource-group $resourceGroupName --name $databricksWorkspaceName --location $location --sku standard || abort_on_failure "Databricks Workspace"
+fi
+
+# Criar cluster no Databricks
+echo "Criando o cluster no Azure Databricks..."
+DATABRICKS_TOKEN=$(az databricks workspace list-access-tokens --resource-group $resourceGroupName --workspace-name $databricksWorkspaceName --query 'token_value' -o tsv)
+curl -X POST -H "Authorization: Bearer $DATABRICKS_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "cluster_name": "spark-cluster",
+    "spark_version": "7.3.x-scala2.12",
+    "node_type_id": "Standard_DS3_v2",
+    "num_workers": 2
+  }' https://$databricksWorkspaceName.azuredatabricks.net/api/2.0/clusters/create || abort_on_failure "Databricks cluster"
+
+# Função para adicionar tags aos recursos
+add_tags_if_not_exists() {
+  local resourceId=$1
+  local existingTags=$(az resource show --ids $resourceId --query "tags" -o tsv)
+  
+  if [[ -z "$existingTags" || $existingTags != *"Client"* ]]; then
+    echo "Adicionando tag ao recurso $resourceId..."
+    az resource tag --tags Client=$clientName --ids $resourceId || abort_on_failure "tag no recurso $resourceId"
+  else
+    echo "Tag já existe para o recurso $resourceId."
+  fi
+}
+
+# Adicionar tags aos recursos
 echo "Adicionando tags aos recursos..."
 resources=$(az resource list --resource-group $resourceGroupName --query "[].id" --output tsv)
 for resource in $resources; do
-  az resource tag --tags ClientName=$clientName --ids $resource || abort_on_failure "tag nos recursos"
+  add_tags_if_not_exists $resource
 done
 
 echo "Criação de recursos concluída."
