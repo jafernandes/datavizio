@@ -7,6 +7,18 @@ resource_exists() {
   az $resourceType show --name $resourceName --resource-group $resourceGroupName &>/dev/null
 }
 
+# Função para verificar se uma storage account existe (ignorando sufixo)
+storage_account_exists() {
+  local storageAccountPrefix=$1
+  az storage account list --resource-group $resourceGroupName --query "[?starts_with(name, '$storageAccountPrefix')].name" --output tsv | grep -q "$storageAccountPrefix"
+}
+
+# Função para verificar se um Databricks Workspace existe
+databricks_workspace_exists() {
+  local workspaceName=$1
+  az databricks workspace list --resource-group $resourceGroupName --query "[?name=='$workspaceName']" --output tsv | grep -q "$workspaceName"
+}
+
 # Função para abortar em caso de falha e limpar recursos
 abort_on_failure() {
   echo "Erro ao criar $1."
@@ -22,7 +34,7 @@ abort_on_failure() {
 # Função para limpar recursos
 clean_up_resources() {
   echo "Limpando recursos criados..."
-  az group delete --name $resourceGroupName --yes --verbose
+  az group delete --name $resourceGroupName --yes --no-wait --verbose
   echo "Recursos removidos. Saindo..."
 }
 
@@ -37,7 +49,7 @@ read -p "Digite o nome do cliente: " clientName
 
 # Nomear os recursos de acordo com as convenções
 resourceGroupName="rg-${clientName}"
-storageAccountName="st${clientName}$(date +%s)"
+storageAccountPrefix="st${clientName}"
 dataFactoryName="adf-${clientName}"
 synapseWorkspaceName="synapse-${clientName}"
 sqlAdminLogin="sqladmin-${clientName}"
@@ -48,7 +60,7 @@ echo
 # Mostrar ao usuário como os recursos serão nomeados
 echo "Os recursos serão nomeados da seguinte forma:"
 echo "Grupo de Recursos: $resourceGroupName"
-echo "Conta de Armazenamento: $storageAccountName"
+echo "Conta de Armazenamento (prefixo): $storageAccountPrefix"
 echo "Data Factory: $dataFactoryName"
 echo "Synapse Workspace: $synapseWorkspaceName"
 echo "Databricks Workspace: $databricksWorkspaceName"
@@ -72,22 +84,22 @@ fi
 
 # Verificar e criar Conta de Armazenamento com Azure Data Lake Storage Gen 2
 echo "Verificando conta de armazenamento..."
-if resource_exists "storage account" $storageAccountName; then
+if storage_account_exists $storageAccountPrefix; then
   echo "Conta de armazenamento já existe."
 else
   echo "Criando a conta de armazenamento..."
-  az storage account create --name $storageAccountName --resource-group $resourceGroupName --location $location --sku Standard_LRS --kind StorageV2 --hns true || abort_on_failure "conta de armazenamento"
+  az storage account create --name $storageAccountPrefix --resource-group $resourceGroupName --location $location --sku Standard_LRS --kind StorageV2 --hns true || abort_on_failure "conta de armazenamento"
 fi
 
 # Verificar e criar Containers na Conta de Armazenamento com autenticação Microsoft Entra
 create_container_if_not_exists() {
   local containerName=$1
   echo "Verificando container $containerName..."
-  if az storage container show --name $containerName --account-name $storageAccountName &>/dev/null; then
+  if az storage container show --name $containerName --account-name $storageAccountPrefix &>/dev/null; then
     echo "Container $containerName já existe."
   else
     echo "Criando container $containerName..."
-    az storage container create --name $containerName --account-name $storageAccountName --auth-mode login || abort_on_failure "container $containerName"
+    az storage container create --name $containerName --account-name $storageAccountPrefix --auth-mode login || abort_on_failure "container $containerName"
   fi
 }
 
@@ -111,12 +123,12 @@ if resource_exists "synapse workspace" $synapseWorkspaceName; then
   echo "Synapse Workspace já existe."
 else
   echo "Criando o Synapse Workspace..."
-  az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword || abort_on_failure "Synapse Workspace"
+  az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountPrefix --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword || abort_on_failure "Synapse Workspace"
 fi
 
 # Verificar e criar Azure Databricks Workspace
 echo "Verificando Azure Databricks Workspace..."
-if resource_exists "databricks workspace" $databricksWorkspaceName; then
+if databricks_workspace_exists $databricksWorkspaceName; then
   echo "Azure Databricks Workspace já existe."
 else
   echo "Criando o Azure Databricks Workspace..."
