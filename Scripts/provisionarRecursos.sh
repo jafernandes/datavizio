@@ -35,6 +35,7 @@ abort_on_failure() {
 clean_up_resources() {
   echo "Limpando recursos criados..."
   az group delete --name $resourceGroupName --yes --no-wait --verbose
+  az group delete --name $managedResourceGroupName --yes --no-wait --verbose
   echo "Recursos removidos. Saindo..."
 }
 
@@ -49,6 +50,7 @@ read -p "Digite o nome do cliente: " clientName
 
 # Nomear os recursos de acordo com as convenções
 resourceGroupName="rg-${clientName}"
+managedResourceGroupName="synapseworkspace-managedrg-${clientName}"
 storageAccountPrefix="st${clientName}"
 dataFactoryName="adf-${clientName}"
 synapseWorkspaceName="synapse-${clientName}"
@@ -95,7 +97,7 @@ fi
 create_container_if_not_exists() {
   local containerName=$1
   echo "Verificando container $containerName..."
-  if az storage container show --name $containerName --account-name $storageAccountPrefix &>/dev/null; then
+  if az storage container show --name $containerName --account-name $storageAccountPrefix --auth-mode login &>/dev/null; then
     echo "Container $containerName já existe."
   else
     echo "Criando container $containerName..."
