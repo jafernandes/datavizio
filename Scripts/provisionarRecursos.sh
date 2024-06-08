@@ -60,7 +60,6 @@ storageAccountPrefix="st${clientName}"
 dataFactoryName="adf-${clientName}"
 synapseWorkspaceName="synapse-${clientName}"
 sqlAdminLogin="sqladmin-${clientName}"
-databricksWorkspaceName="databricks-${clientName}"
 read -s -p "Digite a senha do administrador SQL: " sqlAdminPassword
 echo
 
@@ -70,7 +69,6 @@ echo "Grupo de Recursos: $resourceGroupName"
 echo "Conta de Armazenamento (prefixo): $storageAccountPrefix"
 echo "Data Factory: $dataFactoryName"
 echo "Synapse Workspace: $synapseWorkspaceName"
-echo "Databricks Workspace: $databricksWorkspaceName"
 echo "Usuário SQL: $sqlAdminLogin"
 
 # Confirmar com o usuário
@@ -134,26 +132,6 @@ else
   echo "Criando o Synapse Workspace..."
   az synapse workspace create --name $synapseWorkspaceName --resource-group $resourceGroupName --location $location --storage-account $storageAccountName --file-system default --sql-admin-login-user $sqlAdminLogin --sql-admin-login-password $sqlAdminPassword || abort_on_failure "Synapse Workspace"
 fi
-
-# Verificar e criar Azure Databricks Workspace
-echo "Verificando Azure Databricks Workspace..."
-if databricks_workspace_exists $databricksWorkspaceName; then
-  echo "Azure Databricks Workspace já existe."
-else
-  echo "Criando o Azure Databricks Workspace..."
-  az databricks workspace create --resource-group $resourceGroupName --name $databricksWorkspaceName --location $location --sku standard || abort_on_failure "Databricks Workspace"
-fi
-
-# Criar cluster no Databricks
-echo "Criando o cluster no Azure Databricks..."
-DATABRICKS_TOKEN=$(az databricks workspace list-access-tokens --resource-group $resourceGroupName --workspace-name $databricksWorkspaceName --query 'token_value' -o tsv)
-curl -X POST -H "Authorization: Bearer $DATABRICKS_TOKEN" -H "Content-Type: application/json" \
-  -d '{
-    "cluster_name": "spark-cluster",
-    "spark_version": "7.3.x-scala2.12",
-    "node_type_id": "Standard_DS3_v2",
-    "num_workers": 2
-  }' https://$databricksWorkspaceName.azuredatabricks.net/api/2.0/clusters/create || abort_on_failure "Databricks cluster"
 
 # Função para adicionar tags aos recursos
 add_tags_if_not_exists() {
